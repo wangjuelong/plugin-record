@@ -2,15 +2,14 @@ package record
 
 import (
 	"encoding/json"
+	. "github.com/Monibuca/engine/v3"
+	. "github.com/Monibuca/utils/v3"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"sync"
-
-	. "github.com/Monibuca/engine/v3"
-	. "github.com/Monibuca/utils/v3"
 )
 
 var config struct {
@@ -18,6 +17,14 @@ var config struct {
 	AutoPublish bool
 	AutoRecord  bool
 }
+
+type RecordingInfo struct {
+	ID        string      `json:"id"`
+	Subscribe *Subscriber `json:"-"`         // 视频流
+	Filepath  string      `json:"filepath"`  // 文件路径
+	Recording bool        `json:"recording"` // 是否正在录制
+}
+
 var recordings sync.Map
 
 type FlvFileInfo struct {
@@ -71,14 +78,35 @@ func run() {
 		}
 	})
 
+	http.HandleFunc("/api/record/status", func(w http.ResponseWriter, r *http.Request) {
+		CORS(w, r)
+		var recordingInfo RecordingInfo
+		if streamPath := r.URL.Query().Get("streamPath"); streamPath != "" {
+			if stream, ok := recordings.Load(streamPath); ok {
+				if output, ok := stream.(*RecordingInfo); ok {
+					recordingInfo.Recording = output.Recording
+					recordingInfo.Filepath = output.Filepath
+					recordingInfo.ID = output.ID
+				}
+			}
+		}
+		data, _ := json.Marshal(recordingInfo)
+		w.Write(data)
+	})
+
 	http.HandleFunc("/api/record/flv/stop", func(w http.ResponseWriter, r *http.Request) {
 		CORS(w, r)
 		if streamPath := r.URL.Query().Get("streamPath"); streamPath != "" {
 			filePath := filepath.Join(config.Path, streamPath+".flv")
 			if stream, ok := recordings.Load(filePath); ok {
-				output := stream.(*Subscriber)
-				output.Close()
-				w.Write([]byte("success"))
+				if output, ok := stream.(*RecordingInfo); ok {
+					output.Subscribe.Close()
+					output.Recording = false
+					recordings.Store(filePath, output)
+					w.Write([]byte("success"))
+				} else {
+					w.Write([]byte("no right stream"))
+				}
 			} else {
 				w.Write([]byte("no query stream"))
 			}
@@ -125,10 +153,11 @@ func onSubscribe(v interface{}) {
 		}
 	}
 }
+
 func onPublish(v interface{}) {
 	p := v.(*Stream)
 	if config.AutoRecord {
-		SaveFlv(p.StreamPath, false)
+		_ = SaveFlv(p.StreamPath, false)
 	}
 }
 

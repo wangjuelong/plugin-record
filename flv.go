@@ -26,6 +26,7 @@ func getDuration(file *os.File) uint32 {
 	}
 	return 0
 }
+
 func SaveFlv(streamPath string, append bool) error {
 	flag := os.O_CREATE
 	if append {
@@ -33,7 +34,10 @@ func SaveFlv(streamPath string, append bool) error {
 	} else {
 		flag = flag | os.O_TRUNC | os.O_WRONLY
 	}
-	filePath := filepath.Join(config.Path, streamPath+".flv")
+	filePath, err := filepath.Abs(filepath.Join(config.Path, streamPath+".flv"))
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return err
 	}
@@ -54,7 +58,12 @@ func SaveFlv(streamPath string, append bool) error {
 		_, err = file.Write(codec.FLVHeader)
 	}
 	if err == nil {
-		recordings.Store(filePath, &p)
+		recordings.Store(filePath, RecordingInfo{
+			ID:        streamPath,
+			Subscribe: &p,
+			Filepath:  filePath,
+			Recording: true,
+		})
 		if err := p.Subscribe(streamPath); err == nil {
 			at, vt := p.WaitAudioTrack("aac", "pcma", "pcmu"), p.WaitVideoTrack("h264")
 			tag0 := at.RtmpTag[0]
