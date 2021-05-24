@@ -52,6 +52,10 @@ func SaveFlv(streamPath string, append bool) error {
 	}
 	var offsetTime uint32
 	if append {
+		fileInfo, err := file.Stat()
+		if err == nil && fileInfo.Size() == 0 {
+			_, err = file.Write(codec.FLVHeader)
+		}
 		offsetTime = getDuration(file)
 		file.Seek(0, io.SeekEnd)
 	} else {
